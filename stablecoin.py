@@ -48,45 +48,70 @@ token_cible_contract = web3.eth.contract(
     abi=abi_chainlink_feed
 )
 
-#%% On récupère les prix pour chaque bloc (dict vide)
+#%% On récupère les prix pour chaque bloc
 stablecoin_prices_by_block = {}
 token_prices_by_block = {}
 
+# Compteurs pour les variations
+stablecoin_variations = 0
+token_variations = 0
+
+previous_stablecoin_price = None
+previous_token_price = None
+
 for bloc in range(bloc_debut, bloc_fin + 1):
-    # pour le stablecoin USDT
     try:
         dec_s = stablecoin_contract.functions.decimals().call(block_identifier=bloc)
         data_s = stablecoin_contract.functions.latestRoundData().call(block_identifier=bloc)
         price_s = data_s[1] / (10**dec_s)
         stablecoin_prices_by_block[bloc] = price_s
         print(f"[Bloc {bloc}] Prix stablecoin = {price_s} $")
+        
+        if previous_stablecoin_price is not None:
+            # on vérifie si le prix est le même ou non par rapport à l'ancien bloc
+            if price_s != previous_stablecoin_price:
+                stablecoin_variations += 1
+        
+        previous_stablecoin_price = price_s
+
     except Exception:
         print(f"[Bloc {bloc}] Aucun prix stablecoin (erreur : {Exception})")
 
-    # pour le token
     try:
         dec_t = token_cible_contract.functions.decimals().call(block_identifier=bloc)
         data_t = token_cible_contract.functions.latestRoundData().call(block_identifier=bloc)
         price_t = data_t[1] / (10**dec_t)
         token_prices_by_block[bloc] = price_t
-        print(f"[Bloc {bloc}] Prix token = {price_t} $")
+        print(f"[Bloc {bloc}] Prix token = {price_t}$")
+        
+        # on vérifie la variation par rapport au bloc d'avant
+        if previous_token_price is not None:
+            # on vérifie si le prix à changé
+            if price_t != previous_token_price:
+                token_variations += 1
+        
+        previous_token_price = price_t
+
     except Exception:
         print(f"[Bloc {bloc}] Aucun prix token (erreur : {Exception})")
 
-#%% On calcul le ratio par rapport à chaque bloc
+#%% On calcule le ratio par rapport à chaque bloc
 ratios = []
 
 for bloc in range(bloc_debut, bloc_fin + 1):
     if bloc in stablecoin_prices_by_block and bloc in token_prices_by_block:
         stable_price = stablecoin_prices_by_block[bloc]
         token_price = token_prices_by_block[bloc]
-        ratio = token_price / stable_price
-        ratios.append(ratio)
-        print(f"[Bloc {bloc}] Ratio = {ratio}")
+        ratio = token_price / stable_price if stable_price != 0 else None
+        if ratio is not None:
+            ratios.append(ratio)
+            print(f"[Bloc {bloc}] Ratio = {ratio}")
+        else:
+            print(f"[Bloc {bloc}] Ratio non calculable (division par zéro)")
     else:
-        print(f"[Bloc {bloc}] Ratio non calculable")
+        print(f"[Bloc {bloc}] Ratio non calculable (prix manquant)")
 
-#%% On fait avg des ratios
+#%% Moyenne des ratios
 if ratios:
     moyenne_ratio = sum(ratios) / len(ratios)
     print(f"\nMoyenne des ratios (Token/USDT) = {moyenne_ratio:.4f}")
@@ -97,3 +122,7 @@ if ratios:
         print("Le token n'est pas un stablecoin !!")
 else:
     print("Impossible de calculer le ratio")
+
+#%% on affiche les variations
+print(f"Nombre de variations du stablecoin : {stablecoin_variations}")
+print(f"Nombre de variations du token : {token_variations}")
